@@ -12,48 +12,6 @@ import {
   fireEvent
 } from 'https://unpkg.com/custom-card-helpers@1.9.0/dist/index.m.js?module';
 
-class MediaPlayerCardService {
-  /** @type {MediaPlayerState} */
-  state;
-  setHass(hass, entity) {
-    this.hass = hass;
-    this.state = hass.states[entity];
-    this.entityId = entity;
-  }
-
-  get name() { return this.state.attributes.friendly_name; }
-  get volumeEnabled() { return this.#isFeatureOn(4); } // VOLUME_SET: 4
-  get muteEnabled() { return this.#isFeatureOn(8); }   // VOLUME_MUTE: 8
-  get powerEnabled() { return this.#isFeatureOn(128); } // TURN_ON: 128, TURN_OFF: 256
-  get sourceEnabled() { return this.#isFeatureOn(2048); } // SELECT_SOURCE: 2048
-  get isOn() { return this.state.state === 'on'; }
-  get isOff() { return this.state.state === 'off'; }
-  get volume() { return this.state.attributes.volume_level * 100 }
-  get isMuted() { return this.state.attributes.is_volume_muted; }
-  get isMutedIcon() { return this.isMuted ? 'mdi:volume-off' : 'mdi:volume-high' }
-  get sources() { return this.state.attributes.source_list; }
-  get device() { return this.state.attributes.device_class; }
-  get deviceIcon() { return this.device === 'tv' ? 'mdi:television' : 'mdi:cast-variant' }
-  get stateIcon() { return this.state.state === 'off' ? 'mdi:power-plug-off-outline' : this.state.state === 'idle' ? 'mdi:power-sleep' : 'mdi:power'; }
-
-  togglePower() { 
-    if (this.isOff) {
-      return this.#call('turn_on');
-    } else {
-      return this.#call('turn_off');
-    }
-  }
-
-  toggleMute() { return this.#call('volume_mute', { is_volume_muted: !this.isMuted }); }
-  volumeUp() { return this.#call("volume_up"); }
-  volumeDown() { return this.#call("volume_down"); }
-  selectSource(source) { return this.#call("select_source", { source }); }
-  
-  #isFeatureOn = (val) => (this.state.attributes.supported_features & val) === val;
-  #call = (name, data) => this.hass.callService('media_player', name, { entity_id: this.entityId, ...data });
-}
-
-/** @property {MediaPlayerCardService} #service */
 class MediaPlayerCard extends LitElement {
   static supportedDomains = ['media_player'];
   static get properties() {
@@ -70,8 +28,6 @@ class MediaPlayerCard extends LitElement {
   static getStubConfig() {
     return { entity: "media_player.samsung_tv" };
   }
-
-  #service = new MediaPlayerCardService();
 
   setConfig(config) {
     if (!config || !config.entity) {
@@ -93,53 +49,63 @@ class MediaPlayerCard extends LitElement {
     return this.config && this.hass && hasConfigOrEntityChanged(this, changedProps, false);
   }
 
-  update(changedProperties) {
-    // reset the service properties.
-    if (changedProperties.has('hass') && this.config) {
-      this.#service.setHass(this.hass, this.config.entity);
-    }
-
-    super.update(changedProperties);
-  }
-
   render() {
     if (!this.config || !this.hass) {
       return nothing;
     }
 
-    const _ = this.#service;
+    const entity_id = this.config.entity;
+    /** @type {MediaPlayerState} */
+    const state = this.hass.states[entity_id];
+    const name = state.attributes.friendly_name;
+    const device = state.attributes.device_class;
+    const deviceIcon = device === 'tv' ? 'mdi:television' : 'mdi:cast-variant';
+    const stateIcon = state.state === 'off' ? 'mdi:power-plug-off-outline' : state.state === 'idle' ? 'mdi:power-sleep' : 'mdi:power';
+    const isOn = state.state === 'on';
+    const isOff = state.state === 'off';
+    const volume = state.attributes.volume_level * 100;
+    const isMuted = state.attributes.is_volume_muted;
+    const isMutedIcon = isMuted ? 'mdi:volume-off' : 'mdi:volume-high';
+    const volumeEnabled = (state.attributes.supported_features & 4) === 4; // VOLUME_SET: 4
+    const muteEnabled = (state.attributes.supported_features & 8) === 8; // VOLUME_MUTE: 8
+    const call = (name, data) => this.hass.callService('media_player', name, { entity_id, ...data });
+    const toggleMute = () => call('volume_mute', { is_volume_muted: !isMuted });
+    const volumeUp = () => call("volume_up");
+    const volumeDown = () => call("volume_down");
+    const togglePower = () => isOff ? call('turn_on') : call('turn_off');
+
     return html`
       <ha-card>
         <div class="content">
           <div class="toolbar">
-            <span title=${_.device}">
+            <span title=${device}">
               <ha-icon class="device-icon"
-                       .icon="${_.deviceIcon}"></ha-icon>
+                       .icon="${deviceIcon}"></ha-icon>
             </span>
-            <div class="name">${_.name}</div>
-            <span title=${_.state.state}>
+            <div class="name">${name}</div>
+            <span title=${state.state}>
               <ha-icon class="power-icon"
-                       .icon="${_.stateIcon}"></ha-icon>
+                       .icon="${stateIcon}"></ha-icon>
             </span>
             <div class="toolbar-actions">
-              ${_.isOn ? html`
+              ${isOn ? html`
                 <ha-icon class="mute-icon"
-                        .icon="${_.isMutedIcon}"
-                        ?disabled=${!_.muteEnabled}
-                        @click=${() => _.toggleMute()}></ha-icon>
+                        .icon="${isMutedIcon}"
+                        ?disabled=${!muteEnabled}
+                        @click=${() => toggleMute()}></ha-icon>
                 <ha-icon class="state-icon"
-                         ?disabled=${!_.volumeEnabled}
+                         ?disabled=${!volumeEnabled}
                          icon="mdi:volume-minus"
-                         @click=${() => _.volumeUp()}></ha-icon>
-                <div class="volume-level">${_.volume}</div>
+                         @click=${() => volumeUp()}></ha-icon>
+                <div class="volume-level">${volume}</div>
                 <ha-icon class="state-icon"
-                         ?disabled=${!_.volumeEnabled}
+                         ?disabled=${!volumeEnabled}
                          icon="mdi:volume-plus"
-                         @click=${() => _.volumeDown()}></ha-icon>
+                         @click=${() => volumeDown()}></ha-icon>
               `: ''}
               <ha-icon class="power-button"
                        icon="mdi:power"
-                       @click=${(ev) => _.togglePower()}></ha-icon>
+                       @click=${(ev) => togglePower()}></ha-icon>
             </div>
           </div>
         </div>
