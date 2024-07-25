@@ -8,6 +8,7 @@ import {
 
 import { 
   computeDomain,
+  computeEntity,
   hasConfigOrEntityChanged,
   fireEvent
 } from 'https://unpkg.com/custom-card-helpers@1.9.0/dist/index.m.js?module';
@@ -26,8 +27,14 @@ class MediaPlayerState {
   get isMutedIcon() { return this.isMuted ? 'mdi:volume-off' : 'mdi:volume-high' }
   get sources() { return this._state.attributes.source_list; }
   get device() { return this._state.attributes.device_class; }
-  get deviceIcon() { return this.device === 'tv' ? 'mdi:television' : 'mdi:cast-variant' }
-  get stateIcon() { return this._state.state === 'off' ? 'mdi:power-plug-off-outline' : this._state.state === 'idle' ? 'mdi:power-sleep' : 'mdi:power'; }
+  get deviceIcon() {
+    switch (this.device) {
+      case 'tv': return this.isOn ? 'mdi:television' : 'mdi:television-off';
+      case 'speaker': return this.isOn ? 'mdi:speaker' : 'mdi:speaker-off';
+      default: return this.isOn ? 'mdi:cast' : 'mdi:cast-off';
+    }
+  }
+  get deviceIconTitle() { return `${this.device} ${this.stateName}`; }
   get stateName() { return this._state.state; }
 
   isFeatureOn(feature) { return (this._state.attributes.supported_features & feature) === feature; }
@@ -57,7 +64,7 @@ function CardActionsTracker(actions, options) {
   const { hassFn, entityIdFn } = options;
   const disable = (query) => query().removeAttribute('disabled');
   function call(action, args, domain) {
-    return hassFn().callService(domain || 'media_player', action, { entity_id: entityIdFn(), ...args });
+    return hassFn().callService(domain || 'media_player', action, Object.assign({ entity_id: entityIdFn()}, args));
   }
   function actionHandler(name, ...args) {
     const opts = actions[name];
@@ -128,6 +135,37 @@ class MediaPlayerCard extends LitElement {
     },
     volumeDown: {
       do: (call) => call('volume_down')
+    },
+    command: {
+      do: (call, type, value) => {
+        if (type === 'app') {
+          return call('play_media', {
+            media_content_id: value,
+            media_content_type: 'app'
+          });
+        } else if (type === 'key') {
+          return call('play_media', {
+            media_content_id: value,
+            media_content_type: "send_key"
+          });
+        } else if (type === 'command') {
+          const entity = computeEntity(this.config.entity);
+          const entity_id = `remote.${entity}`;
+          if (this.hass.entities[entity_id]) {
+            return call('send_command', { command: value, entity_id }, 'remote');
+          }
+        } else if (type === 'source') {
+          return call('select_source', {
+            source: value
+          });
+        } else if (type === 'custom') {
+          const [command, id] = value.split('|');
+          return call('play_media', {
+            media_content_id: id,
+            media_content_type: command
+          });
+        }
+      }
     }
   }, {
     hassFn: () => this.hass,
@@ -149,7 +187,7 @@ class MediaPlayerCard extends LitElement {
   }
 
   /** Get the card size. (x * 50px) */
-  getCardSize() { return 3; }
+  getCardSize() { return 2; }
 
   shouldUpdate(changedProps) {
     return this.config && this.hass && hasConfigOrEntityChanged(this, changedProps, false);
@@ -162,19 +200,17 @@ class MediaPlayerCard extends LitElement {
 
     this.#state.state = this.hass.states[this.config.entity];
     const _ = this.#state;
+    /** @type {CustomKey[]} */
+    const customKeys = this.config.customKeys || [];
     return html`
       <ha-card>
         <div class="content">
           <div class="toolbar">
-            <span title=${_.device}">
+            <span title=${_.deviceIconTitle}>
               <ha-icon class="device-icon"
                        .icon="${_.deviceIcon}"></ha-icon>
             </span>
-            <div class="name">${_.name}</div>
-            <span title=${_.stateName}>
-              <ha-icon class="power-icon"
-                       .icon="${_.stateIcon}"></ha-icon>
-            </span>
+            <div class="name">${this.config.title || _.name}</div>
             <div class="toolbar-actions">
               ${_.isOn ? html`
                 <ha-icon class="mute-icon"
@@ -195,6 +231,13 @@ class MediaPlayerCard extends LitElement {
                        icon="mdi:power"
                        @click=${(ev) => this.#actions.power()}></ha-icon>
             </div>
+          </div>
+          <div class="footer">
+          ${customKeys.map((key) => html`
+            <ha-icon .icon=${key.icon}
+                     title=${key.title || key.value}
+                     @click=${() => this.#actions.command(key.type, key.value)}></ha-icon>
+            `)}
           </div>
         </div>
       </ha-card>
@@ -228,10 +271,19 @@ class MediaPlayerCard extends LitElement {
         gap: 10px;
         align-items: center;
       }
-      .toolbar-actions > ha-icon {
-        cursor: pointer;
-        --mdc-icon-size: 28px;
+
+      .footer {
+        border-top: 1px solid #EEE;
+        padding-top: 5px;
+        display: flex;
+        gap: 8px;
       }
+
+      .toolbar-actions > ha-icon, .footer > ha-icon {
+        cursor: pointer;
+        --mdc-icon-size: 32px;
+      }
+
       ha-icon:disabled {
         opacity: 0.5;
       }
@@ -326,4 +378,12 @@ window.customCards.push({
  *     volume_level: number
  *   }
  * }} MediaPlayerState
+ */
+/**
+ * @typedef {{
+ *   icon: string,
+ *   title: string || undefined,
+ *   type: 'app' || 'key' || 'command' || 'source' || 'custom',
+ *   value: string
+ * }} CustomKey
  */
