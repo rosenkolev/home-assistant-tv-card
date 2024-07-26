@@ -2,6 +2,7 @@
 An example of a simple tv card for home assistant with JavaScript and Lit-Element. A great start for any custom UI card.
 
 ![](./docs/view.png)
+![](./docs/view2.png)
 
 The card support the visual Editor.
 
@@ -25,36 +26,130 @@ The card support the visual Editor.
 **example configs**
 
 ```yaml
+entity: media_player.samsung_the_frame
 type: custom:simple-media-player-card2
-entity: media_player.samsung_the_frame_55
 title: Samsung TV
-customKeys:
-  - icon: mdi:power-cycle
-    title: power button
-    type: command
-    value: KEY_POWER
-  - icon: mdi:netflix
-    title: Netflix
-    type: app
-    value: org.tizen.netflixapp
-  - icon: mdi:youtube
-    title: YouTube
-    type: app
-    value: 111299001912
-  - icon: mdi:video
-    title: Prime Video
-    type: app
-    value: org.tizen.primevideo
-  - icon: mdi:home
-    title: Netflix
-    type: command
-    value: KEY_HOME
+bars:
+  - align: evenly
+    items:
+      - icon: mdi:power-cycle
+        iconOff: mdi:circle-outline
+        iconExpression: art_mode_status==off
+        title: Power
+        type: command
+        value: KEY_POWER
+      - icon: mdi:pause
+        title: Pause
+        type: command
+        value: KEY_PAUSE
+        disabled: art_mode_status==off
+      - icon: mdi:play
+        title: Play
+        type: command
+        value: KEY_PLAY
+        disabled: art_mode_status==off
+      - icon: mdi:home
+        title: Home
+        type: command
+        value: KEY_HOME
+      - icon: mdi:keyboard-return
+        title: Home
+        type: command
+        value: KEY_RETURN
+  - align: evenly
+    items:
+      - icon: mdi:epsilon
+        title: EON
+        type: app
+        value: IaJ5S3D7jQ.eon
+      - icon: mdi:netflix
+        title: Netflix
+        type: app
+        value: org.tizen.netflix-app
+      - icon: mdi:video
+        title: Prime Video
+        type: app
+        value: org.tizen.primevideo
+      - icon: mdi:diamond-outline
+        title: Prime Video
+        type: app
+        value: MCmYXNxgcu.DisneyPlus
+      - icon: mdi:shield-account-outline
+        title: Sky
+        type: app
+        value: skysh0WTIM.SkyShowtime
 ```
 
-| type | command |
-| ---------------- | ------- |
-| app | `media_player.media_play` media_content_type: `app` media_content_id: `value` | 
-| key | `media_player.play_media` media_content_type: `send_key` media_content_id: `value` |
-| source | `media_player.select_source` source: `value` |
-| custom | `media_player.play_media` media_content_type: `value.split\('\|')[0]` media_content_id: `value.split\('\|')[1]` |
-| command | `remote.send_command` command: `value` |
+#### Configuration
+
+##### Config
+| | |
+| - | - |
+| entity | The entity name |
+| title | The title on the card |
+| bars | a list of [bar](#bar) |
+| - align | `evenly`,`between`, or empty for left alignment |
+| - items | a list of items/actions |
+
+##### Bar
+
+| | |
+| - | - |
+| align | `evenly`,`between`, or empty for left alignment |
+| items | a list of [Items/Actions](#item) |
+
+### Item
+
+| | |
+| - | - |
+| icon | the material icon |
+| iconOff | (optional) shows instead of `icon` when `iconExpression` is false |
+| iconExpression | (optional) when defined determine `icon` or `iconOff` is shown (see [expression](#expression)) |
+| title | item title |
+| type | (optional) `app`, `key`, `source`, `command`, `custom` (see [Action Types](#action-types)). If not provided, no action will execute. |
+| value | the action value |
+| disabled | (optional) expression determines when to disabled the action (see [expression](#expression)) |
+
+##### Action Types
+
+> type: key \
+> service: media_player.play_media \
+> media_content_type: send_key \
+> media_content_id: &value
+
+> type: app \
+> service: media_player.play_media \
+> media_content_type: app \
+> media_content_id: &value
+
+> type: source \
+> service: media_player.select_source \
+> source: &value
+
+> type: command \
+> service: remote.send_command \
+> command: &value
+
+> type: custom \
+> service: media_player.play_media \
+> media_content_type: &value.split(.)[0] \
+> media_content_id: &value.split(.)[1]
+>
+> _note: value is `{context_type}.{context_id}`_
+
+# Expression
+
+The expression is of type `{attribute_name}=={value}`.
+examples: \
+`source == TV` \
+`source != TV`
+`source ~= HDMI`
+`sources *= TV`
+
+| operand | info |
+| - | - |
+| == | equals |
+| != | not equals |
+| ^= | starts with |
+| $= | ends with |
+| *= | included in array |
