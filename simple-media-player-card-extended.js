@@ -63,6 +63,33 @@ function queryable(elementFn) {
   };
 }
 
+function expressionAdapter(stateFn) {
+  const expressionRegex = /([a-zA-Z0-9_\-\.]+)\s*((==)|(!=)|(\^=)|(\$=)|(\*=))\s*([a-zA-Z0-9]+)*/;
+  function getObjectValueByPath(obj, path) {
+    return path.split('.').reduce((o, i) => o[i], obj);
+  }
+  
+  return function (expression) {
+    if (typeof expression !== 'string') return false;
+    const match = expressionRegex.exec(expression);
+    if (match) {
+      const key = match[1];
+      const left = getObjectValueByPath(stateFn(), key);
+      const operator = match[2];
+      const right = match[match.length-1];
+      if (typeof left === 'undefined' || typeof right === 'undefined') return false;
+      switch (operator) {
+        case '==': return left === right;
+        case '!=': return left !== right;
+        case '^=': return left.startsWith(right);
+        case '$=': return left.endsWith(right);
+        case '*=': return left.includes(right);
+        default: return false;
+      }
+    }
+  };
+}
+
 function CardActionsTracker(actions, options) {
   const state = new Set();
   const { hassFn, entityIdFn } = options;
@@ -104,7 +131,6 @@ function CardActionsTracker(actions, options) {
 }
 
 class MediaPlayerCard extends LitElement {
-  static expressionRegex = /([a-zA-Z0-9_\-\.]+)\s*((==)|(!=)|(\^=)|(\$=)|(\*=))\s*([a-zA-Z0-9]+)*/;
   static supportedDomains = ['media_player'];
   static get properties() {
     return {
@@ -121,6 +147,7 @@ class MediaPlayerCard extends LitElement {
     return { entity: "media_player.samsung_tv" };
   }
 
+  #exp = expressionAdapter(() => this.#state.state);
   #query = queryable(() => this.shadowRoot);
   #state = new MediaPlayerStateAccessor();
   #actions = new CardActionsTracker({
@@ -206,7 +233,7 @@ class MediaPlayerCard extends LitElement {
 
     this.#state.state = this.hass.states[this.config.entity];
     const _ = this.#state;
-    const bars = this.config.bars || [];
+    const bars = _.isOn ? (this.config.bars || []) : [];
     const classMap = (obj) => Object.entries(obj).filter(([, value]) => value).map(([key]) => key).join(' ');
     const getIcon = (key) => key.iconExpression ? (this.#exp(key.iconExpression) ? key.icon : key.iconOff) : key.icon;
     return html`
@@ -245,11 +272,16 @@ class MediaPlayerCard extends LitElement {
                           'flex-between': bar.align === 'between',
                           'flex-evenly': bar.align === 'evenly' })}>
               ${(bar.items || []).filter(x => x.icon).map((key) => html`
-                <ha-icon class="btn"
-                         ?disabled=${this.#exp(key.disabled)}
-                         .icon=${getIcon(key)}
-                         title=${key.title || key.value}
-                         @click=${() => this.#actions.command(key.type, key.value)}></ha-icon>
+                <div class="btn-container"
+                     @click=${() => this.#actions.command(key.type, key.value)}>
+                  <ha-icon class="btn"
+                           ?disabled=${this.#exp(key.disabled)}
+                           .icon=${getIcon(key)}
+                           title=${key.title || key.value}></ha-icon>
+                  ${key.hideTitle===true ? '' : html`
+                    <div class="btn-title">${key.title}</div>
+                  `}
+                </div>
               `)}
             </div>
           `)}
@@ -260,26 +292,6 @@ class MediaPlayerCard extends LitElement {
 
   updated() {
     this.#actions.reset();
-  }
-
-  #exp(expression) {
-    if (typeof expression !== 'string') return false;
-    const match = MediaPlayerCard.expressionRegex.exec(expression);
-    if (match) {
-      const key = match[1];
-      const left = this.#state.state.attributes[key];
-      const operator = match[2];
-      const right = match[match.length-1];
-      if (typeof left === 'undefined' || typeof right === 'undefined') return false;
-      switch (operator) {
-        case '==': return left === right;
-        case '!=': return left !== right;
-        case '^=': return left.startsWith(right);
-        case '$=': return left.endsWith(right);
-        case '*=': return left.includes(right);
-        default: return false;
-      }
-    }
   }
 
   // styles
@@ -304,6 +316,9 @@ class MediaPlayerCard extends LitElement {
 
       .flex-between { justify-content: space-between; }
       .flex-evenly { justify-content: space-evenly; }
+      .btn-container {
+        text-align: center;
+      }
       .btn {
         cursor: pointer;
         --mdc-icon-size: 34px;
@@ -311,6 +326,10 @@ class MediaPlayerCard extends LitElement {
       }
       .btn:disabled {
         opacity: 0.5;
+      }
+      .btn-title {
+        font-size: 9px;
+        cursor: pointer;
       }
     `;
   }
@@ -364,7 +383,9 @@ class MediaPlayerCardEditor extends ScopedRegistryHost(LitElement) {
         <div class="debug">
           <input id="debugService" value="media_player.play_media" />
           <input id="debugData" .value=${"{ \"media_content_type\": \"app\", \"media_content_id\": \"11101200001\" }"} />
-          <button @click=${() => this._debugCall()}>Test</button><button @click=${() => console.log(this.hass)}>Print HASS</button>
+          &nbsp;<button @click=${() => this._debugCall()}>Test</button>
+          &nbsp;<button @click=${() => console.log(this.hass)}>Print HASS</button>
+          &nbsp;</button><button @click=${() => console.log(this.hass.states[this._entity])}>Print State</button>
         </div>
       </details>
     </div>
@@ -458,6 +479,7 @@ window.customCards.push({
  *   iconOff: string || undefined,
  *   title: string || undefined,
  *   disabled: string || undefined,
+ *   hideTitle: boolean,
  *   type: 'app' || 'key' || 'command' || 'source' || 'custom' || undefined,
  *   value: string || undefined
  * }} CustomKey

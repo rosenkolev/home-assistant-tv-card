@@ -34,7 +34,7 @@ bars:
     items:
       - icon: mdi:power-cycle
         iconOff: mdi:circle-outline
-        iconExpression: art_mode_status==off
+        iconExpression: attributes.art_mode_status==off
         title: Power
         type: command
         value: KEY_POWER
@@ -42,12 +42,12 @@ bars:
         title: Pause
         type: command
         value: KEY_PAUSE
-        disabled: art_mode_status==off
+        disabled: attributes.art_mode_status==off
       - icon: mdi:play
         title: Play
         type: command
         value: KEY_PLAY
-        disabled: art_mode_status==off
+        disabled: attributes.art_mode_status==off
       - icon: mdi:home
         title: Home
         type: command
@@ -105,6 +105,7 @@ bars:
 | icon | the material icon |
 | iconOff | (optional) shows instead of `icon` when `iconExpression` is false |
 | iconExpression | (optional) when defined determine `icon` or `iconOff` is shown (see [expression](#expression)) |
+| hideTitle | (optional) when `true` it hide the title |
 | title | item title |
 | type | (optional) `app`, `key`, `source`, `command`, `custom` (see [Action Types](#action-types)). If not provided, no action will execute. |
 | value | the action value |
