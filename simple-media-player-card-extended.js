@@ -30,6 +30,13 @@ class MediaPlayerStateAccessor {
   get isMutedIcon() { return this.isMuted ? 'mdi:volume-off' : 'mdi:volume-high' }
   get sources() { return this._state.attributes.source_list; }
   get device() { return this._state.attributes.device_class; }
+  get artMode() { return typeof this._state.attributes.art_mode_status === 'string'; }
+  get artModeState() { return this._state.attributes.art_mode_status; }
+  get stateName() {
+    return this.artMode
+      ? (this.artModeState === 'on' ? 'art mode' : this._state.state)
+      : this._state.state;
+  }
   get deviceIcon() {
     switch (this.device) {
       case 'tv': return this.isOn ? 'mdi:television' : 'mdi:television-off';
@@ -39,7 +46,6 @@ class MediaPlayerStateAccessor {
     }
   }
   get deviceIconTitle() { return `${this.device} ${this.stateName}`; }
-  get stateName() { return this._state.state; }
 
   isFeatureOn(feature) { return (this._state.attributes.supported_features & feature) === feature; }
 }
@@ -92,7 +98,7 @@ function expressionAdapter(stateFn) {
 
 function CardActionsTracker(actions, options) {
   const state = new Set();
-  const { hassFn, entityIdFn } = options;
+  const { hassFn, entityIdFn, hapticFeedbackFn } = options;
   const disable = (query) => query().removeAttribute('disabled');
   function call(action, args, domain) {
     return hassFn().callService(domain || 'media_player', action, Object.assign({ entity_id: entityIdFn()}, args));
@@ -118,7 +124,7 @@ function CardActionsTracker(actions, options) {
         }
       }).catch(() => (opts.affectedControlQueries.forEach(disable)));
     }
-    if (options.hapticFeedback) {
+    if (hapticFeedbackFn()) {
       forwardHaptic('light');
     }
   }
@@ -144,7 +150,20 @@ class MediaPlayerCard extends LitElement {
   }
 
   static getStubConfig() {
-    return { entity: "media_player.samsung_tv" };
+    return {
+      entity: "media_player.samsung_tv",
+      title: "Television",
+      hapticFeedback: true,
+      bars: [{
+        items: [{
+          icon: 'mdi:netflix',
+          title: 'Netflix',
+          hideTitle: false,
+          type: 'app',
+          value: '',
+        }]
+      }]
+    };
   }
 
   #exp = expressionAdapter(() => this.#state.state);
@@ -202,7 +221,7 @@ class MediaPlayerCard extends LitElement {
   }, {
     hassFn: () => this.hass,
     entityIdFn: () => this.config.entity,
-    hapticFeedback: true,
+    hapticFeedbackFn: () => this.config.hapticFeedback !== false,
   });
 
   /** @param {MediaPlayerCardUserConfig} config */
@@ -349,7 +368,7 @@ class MediaPlayerCardEditor extends ScopedRegistryHost(LitElement) {
   }
 
   firstUpdated() {
-    MediaPlayerCardEditor.#loadHomeAssistantComponents(this, ['ha-entity-picker', 'ha-textfield']);
+    MediaPlayerCardEditor.#loadHomeAssistantComponents(this, ['ha-entity-picker', 'ha-textfield', 'ha-checkbox', 'ha-formfield']);
   }
 
   get _entity() {
@@ -377,6 +396,14 @@ class MediaPlayerCardEditor extends ScopedRegistryHost(LitElement) {
         .configValue=${'title'}
         @input=${this._valueChanged}
       ></ha-textfield>
+      <ha-formfield
+        .label=${'Haptic Feedback'}>
+        <ha-checkbox id="hapticFeedbackCheckbox"
+          .checked=${this.config.hapticFeedback}
+          .configValue=${'hapticFeedback'}
+          @change=${this._valueChanged}
+        ></ha-checkbox>
+      </ha-formfield>
       <p></p>
       <details>
         <summary>Debug</summary>
@@ -406,7 +433,7 @@ class MediaPlayerCardEditor extends ScopedRegistryHost(LitElement) {
     const target = ev.target;
     if (target && this.hass && this.config) {
       const key = target.configValue;
-      const value = target.value ?? target.checked;
+      const value = typeof target.checked === 'boolean' ? target.checked : target.value;
       if (this.config[key] !== value) {
         const config = { ...this.config, [key]: value };
         fireEvent(this, 'config-changed', { config });
@@ -488,6 +515,7 @@ window.customCards.push({
  * @typedef {{
  *  entity: string,
  *  title: string || undefined,
+ *  hapticFeedback: boolean,
  *  bars: {
  *    align: 'evenly' || 'between' || undefined,
  *    items: CustomKey[]
